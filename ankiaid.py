@@ -1,191 +1,184 @@
-import sys,re
-from PyQt5.QtWidgets import QApplication, QWidget, QPlainTextEdit
-from Ui_ankiaid import *
-import win32clipboard as w
-import requests
-from PyQt5.QtCore import Qt
-from bs4 import BeautifulSoup
-sys.path.insert(0,r"D:\Users\10941\source\repos\Python")
-from tools.timer计时 import mark,printTfLT
+from os import remove
+from os.path import isfile
+import re
+import sys
 
-style = """
-    <a style = 
-    'text-decoration: none;
-    padding: 1px 6px 2px 5px;
-	margin: 0 5px 0 0;
-	font-size: 12px;
-	color: white;
-	font-weight: normal;
-	border-radius: 4px'>style</a>
-    """.replace('\n','')
+from bs4 import BeautifulSoup
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QAction, QApplication, QWidget, QPlainTextEdit, QMainWindow, QMessageBox
+import requests
+import win32clipboard as w
+
+from clipboard import getclipboard, setclipboard
+from Ui_ankiaid import *
+
 
 mapL = {"v.":"pos_v",
         "vi.":"pos_v",
         "vt.":"pos_v",
         "n.":"pos_n",
-        "prep.":"pos_r",
-        "conj.":"pos_r",
+        "prep.":"pos_p",
+        "conj.":"pos_c",
         "adv.":"pos_r",
         "adj.":"pos_a"}
 
-def getStag(pos:str):
-    return f"<a class='{mapL[pos]}'>{pos}</a>"
-    pass
+cardtxtname = "tmp.txt"
+ankipath = "D:\Program Files\Anki\Anki"
 
-def getclipboard():
-    w.OpenClipboard()
-    data = w.GetClipboardData()
-    w.CloseClipboard()
-    return data
-
-def setclipboard(string):
-    w.OpenClipboard()
-    w.EmptyClipboard()
-    w.SetClipboardData(w.CF_UNICODETEXT, string)
-    w.CloseClipboard()
-
-class MyWindow(QWidget, Ui_Form):
+class MyWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None):
         super(MyWindow, self).__init__(parent)
         self.setupUi(self)
-        self.word = str()
-        self.lineEdit.setAttribute(QtCore.Qt.WidgetAttribute.WA_InputMethodEnabled, False) #禁用输入法
-        self.pushButton.clicked.connect(self.onInputChanged)
-        self.pushButton_2.clicked.connect(self.onInputChanged2)
-        self.pushButton_3.clicked.connect(self.onInputChanged3)
-        self.pushButton_4.clicked.connect(self.onInputChanged4)
-        self.pushButton_5.clicked.connect(self.init)
-        self.pushButton_link.clicked.connect(self.genHref)
+        self.word = ''
+        self.card = None
+        self.inputLine.setAttribute(QtCore.Qt.WidgetAttribute.WA_InputMethodEnabled, False) # 禁用输入法
+        actHelp = QAction("Help", self)
+        actHelp.triggered.connect(self.help)
+        self.menubar.addAction(actHelp)
+    
+    def help(self):
+        """display the help information"""
+        QMessageBox.information(self, "帮助", "enter a word and press enter key")
 
     def keyPressEvent(self, event):
-        if (event.key() == Qt.Key_V) and QApplication.keyboardModifiers() == Qt.ControlModifier:
-            self.lineEdit.setText(getclipboard())
+        """respond to key-down events"""
+        key = event.key()
+        modifier = QApplication.keyboardModifiers()
+        if (key == Qt.Key_V) and modifier == Qt.ControlModifier:
+            print("paste word")
+            self.inputLine.setText(getclipboard())
             return
-        if (event.key() == Qt.Key_Z) and QApplication.keyboardModifiers() == Qt.ControlModifier:
-            self.lineEdit.setText("")
+        if (key == Qt.Key_Return): # enter corresponds to Key_Return?
+            print("make & import")
+            self.mkcard()
+            self.impCard()
+            return
+        if (key == Qt.Key_I) and modifier == Qt.ControlModifier|Qt.ShiftModifier:
+            print("simply import")
+            self.impCard()
+            return
+        if (key == Qt.Key_X) and modifier == Qt.ControlModifier|Qt.ShiftModifier:
+            print("switch mode")
+            self.switchMode()
             return
 
-    def getW(self):
-        word = self.lineEdit.text()
-        return word
+    def switchMode(self):
+        """switch mode between html and plain text"""
+        text = self.dispArea.toPlainText()
 
-    def freshW(self):
-        """self.word = self.lineEdit.text()"""
-        # if self.word == '': # 刚开始，没有词
-        #     self.word = self.lineEdit.text()
-        if self.word != self.lineEdit.text(): # 重新写了词
-            self.word = self.lineEdit.text()
-
-    def onInputChanged(self,text):
-        """词性高亮"""
-        if text == "":
-            text = self.plainTextEdit.toPlainText()
-        self.plainTextEdit.setPlainText(text)
-        textlines = text.split()
-        for line in textlines:
-            pass
-        text = text.replace("n.", "<a class='pos_n'>n.</a>")
-        text = text.replace("adj.", "<a class='pos_a'>adj.</a>")
-        text = text.replace("adv.", "<a class='pos_r'>adv.</a>")
-        text = text.replace("v.", "<a class='pos_v'>v.</a>")
-        text = text.replace("vi.", "<a class='pos_v'>vi.</a>")
-        text = text.replace("vt.", "<a class='pos_v'>vt.</a>")
-        text = text.replace("prep.", "<a class='pos_n'>prep.</a>")
-        text = text.replace("conj.", "<a class='pos_r'>conj.</a>")
-        text = text.replace('\n',"<br>")
-        setclipboard(text)
-
-    def onInputChanged2(self):
-        """获取音标"""
-        mark()
-        self.freshW()
-        #
-        url = "https://www.youdao.com/result?word=%s&lang=en"%self.word
-        html = requests.get(url,timeout=0.3)
-        # print(html.text)
-        soup = BeautifulSoup(html.text,features="lxml")
-        text = ' '.join([i.text for i in soup.find_all(class_ = "per-phone")])
-        # self.onInputChanged(text)
-        self.plainTextEdit.setPlainText(text)
-        setclipboard(text)
-        #
-        printTfLT("用时")
-        # self.plainTextEdit.setPlainText(soup.)
-
-    def onInputChanged3(self):
-        """获取释义 + 词性高亮"""
-        mark()
-        self.freshW()
-        #
-        url = "https://www.youdao.com/result?word=%s&lang=en"%self.word
-
-        # html一般无换行符\n
-        '''
-        soup.find_all("li", class_ = "word-exp")    <class 'bs4.element.ResultSet'>     list
-        '''
-        text = requests.get(url, timeout=0.4).text
-        text = "<br>".join([re.compile("([a-z]+\.)").sub(lambda m:f"<a class='{mapL[m.group(0)]}'>{m.group(0)}</a>",string=i.text) for i in BeautifulSoup(text, "lxml").find_all("li", class_ = "word-exp")])
-        # self.onInputChanged(text)
-        self.plainTextEdit.setPlainText(text)
-        setclipboard(text)
-        #
-        printTfLT("用时")
-        pass
+        for key in mapL.keys():
+            text = text.replace(key, "<a class=\"{}\">{}</a>".format(mapL[key], key))
         
-    def onInputChanged4(self):
-        """生成发音"""
-        # if self.word == '':
-        self.word = self.lineEdit.text()
-        #
-        '''
-        [sound:http://dict.youdao.com/dictvoice?type=0&audio={{}}]
-        '''
-        text = "[sound:http://dict.youdao.com/dictvoice?type=0&audio={{%s}}]"%self.word
-        self.plainTextEdit.setPlainText(text)
+        if self.dispArea.styleSheet():
+            self.dispArea.setStyleSheet("")
+            text = text.replace("\n", "<br>")
+            self.dispArea.setText(text)
+        else:
+            self.dispArea.setStyleSheet("color: white;background-color: black")
+            self.dispArea.setPlainText(text)
         setclipboard(text)
-        #
-        pass
+
+    def impCard(self):
+        """import card into Anki"""
+        with open(cardtxtname, "w", encoding="utf-8") as f:
+            f.write("\t".join([word for word in self.card])) # .replace("\n", "&nbsp;")
+        from os import system as osys, popen
+        # osys(f'start "{ankipath}" {cardtxtname}')
+        popen(f'"{ankipath}" {cardtxtname}')
 
     def genHref(self):
-        """生成链接"""
-        self.freshW()
+        """generate a href link"""
+        self.word = self.inputLine.text()
         #
         '''
         https://www.youdao.com/result?word=%s&lang=en
         '''
         text = '<a href="https://www.youdao.com/result?word={0}&lang=en">{0}</a>'.format(self.word)
-        self.plainTextEdit.setPlainText(text)
+        self.dispArea.setPlainText(text)
         setclipboard(text)
         #
         pass
 
-    def init(self):
-        """豪华套餐"""
-        self.freshW()
-        if self.word == "":
-            """没词"""
-            print("没词")
+    def mkcard(self):
+        """make the card"""
+        # print("mkcard")
+        if self.word == self.inputLine.text():
+            self.impCard()
             return
+        self.word = self.inputLine.text()
+
+        ## 判断输入正确性
+        # 本地判断
+        if self.word == "":
+            # print("no input")
+            QMessageBox.warning(self, str(self.inputLine.__class__), "No input")
+            return
+        if not re.match("[a-z-]+", self.word):
+            # print("unrecognized characters")
+            QMessageBox.information(self, str(self.inputLine.__class__), "unrecognized characters")
+            return
+        '''
+        from enchant import Dict
+        d = Dict("en_US")
+        if not d.check(self.word):
+            QMessageBox.warning(self, str(self.inputLine.__class__), "我们不认你这个词")
+            return
+        '''
+        
         url = "https://www.youdao.com/result?word=%s&lang=en"%self.word
         r = requests.get(url,timeout=0.3)
         soup = BeautifulSoup(r.text,features="lxml")
+
+        # 联网判断
+        title = soup.find(class_ = "title")
+        if not title and not title.find(class_ = "word-operate add"):
+            QMessageBox.warning(self, str(self.inputLine.__class__), "Not found in Youdao.com")
+            return
+
+        # 刷新
+        self.dispArea.setStyleSheet("")
+
         # 获取音标
         phonetic = ' '.join([i.text for i in soup.find_all(class_ = "per-phone")])
         # 中文释义
+        ## 在此处预防可能出现的字符串误匹配问题
         wordexp = "<br>".join([re.compile("([a-z]+\.)").sub(lambda m:f"<a class='{mapL[m.group(0)]}'>{m.group(0)}</a>",string=i.text) for i in soup.find_all("li", class_ = "word-exp")])
         # 英语例句
         _ = [sen.text for sen in soup.find_all(class_ = "sen-eng")]
         sen_eng = "<br>".join([f"({i+1}) "+_[i] for i in range(len(_))])
-        # print(sen_eng)
 
         # 中文例句
         _ = [sen.text for sen in soup.find_all(class_ = "sen-ch")]
         sen_ch = "<br>".join([f"({i+1}) "+_[i] for i in range(len(_))])
+        
+        # vocabulary简明
+        # vocabulary扩展
+        # 柯林斯星级
+        # 柯林斯解释
 
         # 英语发音
         pronunciation = "[sound:http://dict.youdao.com/dictvoice?type=0&audio={{%s}}]"%self.word
-        text = "\n".join([self.word, phonetic, wordexp, sen_eng, sen_ch, pronunciation])
-        self.plainTextEdit.setPlainText(text)
+        
+        text = "<br>".join([self.word, phonetic, wordexp, sen_eng, sen_ch, pronunciation])
+        self.dispArea.setHtml(text)
+        def genCard():
+            card = [
+                self.word,
+                # f'"{phonetic}"',
+                phonetic,
+                "\"{}\"".format(wordexp.replace('\"', '\"\"')),
+                "",
+                sen_eng,
+                sen_ch,
+                "",
+                "",
+                "",
+                "",
+                pronunciation,
+                "大学六级英语单词"
+            ]
+            return card
+        self.card = genCard()
 
 
 
@@ -193,4 +186,10 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     myWin = MyWindow()
     myWin.show()
-    sys.exit(app.exec_())
+    exit_code = app.exec_()
+
+    if isfile(cardtxtname):
+        # 异常处理
+        remove(cardtxtname)
+        
+    sys.exit(exit_code)
