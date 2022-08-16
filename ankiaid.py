@@ -102,9 +102,7 @@ class MyWindow(QMainWindow, Ui_MainWindow):
     def mkcard(self):
         """make the card"""
         # print("mkcard")
-        if self.word == self.inputLine.text():
-            self.impCard()
-            return
+        if self.word == self.inputLine.text(): return
         self.word = self.inputLine.text()
 
         ## 判断输入正确性
